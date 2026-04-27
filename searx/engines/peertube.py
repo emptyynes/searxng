@@ -56,6 +56,8 @@ def request(query, params):
     # eng_region = traits.get_region(params['searxng_locale'], 'en_US')
     eng_lang = traits.get_language(params["searxng_locale"], None)
 
+    print(urlparse(base_url).hostname)
+    
     params["url"] = (
         base_url.rstrip("/")
         + "/api/v1/search/videos?"
