@@ -6,7 +6,7 @@
 
 import re
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import babel
 from dateutil.parser import parse
@@ -61,11 +61,12 @@ def request(query, params):
         + "/api/v1/search/videos?"
         + urlencode(
             {
-                "q": query,
+                "search": query,
                 "resultType": "videos",
+                "searchTarget": "local",
+                "host": urlparse(base_url).hostname,
                 "start": (params["pageno"] - 1) * 10,
                 "count": 10,
-                # -createdAt: sort by date ascending / createdAt: date descending
                 "sort": "-match",  # sort by *match descending*
                 "nsfw": safesearch_table[params["safesearch"]],
             }
