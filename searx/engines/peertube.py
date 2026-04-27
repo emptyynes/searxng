@@ -61,8 +61,7 @@ def request(query, params):
         + "/api/v1/search/videos?"
         + urlencode(
             {
-                "search": query,
-                "searchTarget": "search-index",  # Vidiversum
+                "q": query,
                 "resultType": "videos",
                 "start": (params["pageno"] - 1) * 10,
                 "count": 10,
