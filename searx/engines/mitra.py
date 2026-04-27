@@ -58,7 +58,7 @@ def response(resp):
         if mastodon_type == "accounts":
             results.append(
                 {
-                    'url': result['uri'],
+                    'url': result['url'],
                     'title': result['username'] + f" ({result['followers_count']} followers)",
                     'content': result['note'],
                     'thumbnail': result.get('avatar'),
