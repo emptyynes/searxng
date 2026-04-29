@@ -1,51 +1,74 @@
+# searx/engines/gelbooru_frontend.py
+
 from __future__ import annotations
 
+import re
 import typing as t
 from urllib.parse import urlencode, urljoin
+
 from lxml import html
 
 from searx.extended_types import SXNG_Response
 from searx.result_types import EngineResults
-from searx.utils import eval_xpath_list, eval_xpath_getindex
+from searx.utils import eval_xpath_list, eval_xpath_getindex, extract_text
+
+about = {
+    "website": "https://cum.hnpse.com/",
+    "use_official_api": False,
+    "results": "HTML",
+}
 
 base_url = "https://cum.hnpse.com"
-
 categories = ["images"]
 paging = True
-timeout = 4.0
+engine_type = "online"
+
+timeout = 5.0
 
 
 def request(query: str, params: dict[str, t.Any]) -> None:
+    pageno = max(int(params.get("pageno", 1) or 1), 1)
+
     params["url"] = f"{base_url}/?{urlencode({
-        "tags": query,
-        "rating": "general",
-        "sort": "id",
+        'tags': query,
+        'rating': 'general',
+        'sort': 'id',
+        'page': pageno,
     })}"
     params["method"] = "GET"
 
 
-# ----------------------------
-# TRY TO RECONSTRUCT FULL IMAGE
-# ----------------------------
-def _thumb_to_full(url: str) -> str:
-    """
-    Gelbooru-style trick:
-    thumbnails usually contain /thumbnails/
-    full images usually are in /images/ or direct CDN path
-    """
-    if not url:
-        return url
+def _thumb_to_guess_full(thumb_url: str | None) -> str | None:
+    if not thumb_url:
+        return None
 
-    return (
-        url
-        .replace("/thumbnails/", "/images/")
-        .replace("thumbnail_", "")
-    )
+    # Gelbooru-style fallback:
+    # /thumbnails/80/6d/thumbnail_806d....jpg -> /images/80/6d/806d....png
+    guessed = thumb_url.replace("/thumbnails/", "/images/").replace("thumbnail_", "")
+    guessed = re.sub(r"\.jpg(?:\?.*)?$", ".png", guessed)
+    return guessed
+
+
+def _extract_field_text(post: html.HtmlElement, field_name: str) -> str | None:
+    """
+    If the page contains a text dump like:
+    FileURL:https://...
+    PreviewURL:https://...
+    SampleURL:https://...
+    try to extract it directly.
+    """
+    text = post.text_content()
+    m = re.search(rf"{re.escape(field_name)}:(\S+)", text)
+    return m.group(1) if m else None
 
 
 def response(resp: SXNG_Response) -> EngineResults:
     results = EngineResults()
-    dom = html.fromstring(resp.text)
+
+    try:
+        dom = html.fromstring(resp.text)
+    except Exception:
+        return results
 
     posts = eval_xpath_list(dom, "//div[contains(@class,'post')]")
 
@@ -55,29 +78,38 @@ def response(resp: SXNG_Response) -> EngineResults:
             continue
 
         post_url = urljoin(base_url, href)
+        post_id = href.rsplit("/", 1)[-1]
 
         thumb = eval_xpath_getindex(post, ".//img/@src", 0, default=None)
         if thumb:
             thumb = urljoin(base_url, thumb)
 
-        post_id = href.rsplit("/", 1)[-1]
+        # Best case: the page already exposes direct URLs in text/JSON-ish form.
+        file_url = _extract_field_text(post, "FileURL")
+        sample_url = _extract_field_text(post, "SampleURL")
+        preview_url = _extract_field_text(post, "PreviewURL")
 
-        # 🔥 FULL IMAGE GUESS (IMPORTANT PART)
-        full_img = _thumb_to_full(thumb)
+        # Fallbacks if the page doesn't explicitly expose them in the HTML fragment.
+        if not file_url:
+            file_url = _thumb_to_guess_full(thumb)
+        if not preview_url:
+            preview_url = thumb
 
         results.add(
             results.types.LegacyResult(
                 template="images.html",
-
                 title=f"Post {post_id}",
                 url=post_url,
 
-                # 🔥 THIS is what fixes click-open behavior
-                img_src=full_img,
+                # This is the important part:
+                # full image here, thumbnail below.
+                img_src=file_url or sample_url or preview_url or post_url,
+                thumbnail_src=preview_url or sample_url or file_url or post_url,
 
-                thumbnail_src=thumb,
-
-                content="",
+                content=extract_text(
+                    eval_xpath_getindex(post, ".//p[contains(@class,'post-score')]", 0, default=None),
+                    allow_none=True,
+                ) or "",
                 source=base_url,
             )
         )
