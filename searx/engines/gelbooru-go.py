@@ -32,7 +32,7 @@ SAFESEARCH_MAP = {
 }
 
 def request(query: str, params: dict[str, t.Any]) -> None:
-    pageno = max(int(params.get("pageno", 1) or 1), 1)
+    pageno = max(int(params.get("pageno", 1) or 1), 1) - 1
 
     safesearch = params.get("safesearch", 0)
     rating = SAFESEARCH_MAP.get(safesearch, "general")
