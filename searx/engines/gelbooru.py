@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import typing as t
-from urllib.parse import urlencode, urljoin
+from urllib.parse import urlencode, urljoin, urlparse, parse_qs, urlunparse, unquote, quote
 
 from lxml import html
 
