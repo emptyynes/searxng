@@ -38,15 +38,33 @@ def request(query: str, params: dict[str, t.Any]) -> None:
     params["method"] = "GET"
 
 
-def _thumb_to_guess_full(thumb_url: str | None) -> str | None:
-    if not thumb_url:
-        return None
+def _thumb_to_guess_full(proxy_url: str) -> str:
+    # разбираем внешний URL
+    parsed = urlparse(proxy_url)
+    qs = parse_qs(parsed.query)
 
-    # Gelbooru-style fallback:
-    # /thumbnails/80/6d/thumbnail_806d....jpg -> /images/80/6d/806d....png
-    guessed = thumb_url.replace("/thumbnails/", "/images/").replace("thumbnail_", "")
-    guessed = re.sub(r"\.jpg(?:\?.*)?$", ".png", guessed)
-    return guessed
+    if "url" not in qs:
+        return proxy_url  # нечего делать
+
+    # достаём и декодируем внутренний URL
+    inner = unquote(qs["url"][0])
+
+    # делаем замену путей
+    inner = inner.replace(
+        "gelbooru.com/thumbnails/",
+        "img2.gelbooru.com/samples/"
+    )
+
+    # заменяем thumbnail_ -> sample_
+    inner = inner.replace("thumbnail_", "sample_")
+
+    # обратно кодируем
+    qs["url"] = [quote(inner, safe=":/")]
+
+    # собираем обратно URL
+    new_query = urlencode(qs, doseq=True)
+
+    return urlunparse(parsed._replace(query=new_query))
 
 
 def _extract_field_text(post: html.HtmlElement, field_name: str) -> str | None:
