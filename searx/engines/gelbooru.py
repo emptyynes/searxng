@@ -1,129 +1,155 @@
+# searx/engines/gelbooru_frontend.py
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Gelbooru image search engine for SearXNG."""
 
-from urllib.parse import urlencode
+from __future__ import annotations
+
+import logging
+import typing as t
+from urllib.parse import urlencode, urljoin
+
+from lxml import html
+
+from searx.enginelib.traits import EngineTraits
+from searx.extended_types import SXNG_Response
+from searx.network import get
+from searx.result_types import EngineResults
+from searx.utils import eval_xpath_getindex, eval_xpath_list, extract_text
+
+logger = logging.getLogger(__name__)
 
 about = {
-    "website": "https://gelbooru.com/",
-    "official_api_documentation": "https://gelbooru.com/index.php?page=help&topic=dapi",
-    "use_official_api": True,
-    "require_api_key": True,
-    "results": "JSON",
+    "website": "https://cum.hnpse.com/",
+    "use_official_api": False,
+    "require_api_key": False,
+    "results": "HTML",
 }
 
+base_url = "https://cum.hnpse.com"
 categories = ["images"]
 engine_type = "online"
 paging = True
-safesearch = True
 
-base_url = "https://gelbooru.com/index.php"
+# Defaults can be overridden in settings.yml
+default_rating = "general"
+default_sort = "id"
+timeout = 5.0
 
-api_key = ""
-user_id = ""
-per_page = 100
+# If your post pages expose the full image nicely, keep this enabled.
+# If it feels too slow, set it to False in the module or override in settings.
+fetch_post_page = True
 
 
-def setup(engine_settings):
-    global api_key, user_id, per_page
+def request(query: str, params: dict[str, t.Any]) -> None:
+    pageno = max(int(params.get("pageno", 1) or 1), 1)
 
-    api_key = str(engine_settings.get("api_key", "")).strip()
-    user_id = str(engine_settings.get("user_id", "")).strip()
+    tags = query.strip()
+    if not tags:
+        tags = ""
 
-    if not api_key or not user_id:
-        return False
+    args = {
+        "tags": tags,
+        "rating": default_rating,
+        "sort": default_sort,
+    }
+    if pageno > 1:
+        args["page"] = pageno
+
+    params["url"] = f"{base_url}/?{urlencode(args)}"
+    params["method"] = "GET"
+
+    params["headers"]["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    params["headers"]["Referer"] = f"{base_url}/?tags=&rating={default_rating}&sort={default_sort}"
+    params["cookies"]["rating"] = default_rating
+
+
+def _first_nonempty(*values: str | None) -> str | None:
+    for value in values:
+        if value:
+            return value
+    return None
+
+
+def _extract_full_image_url(post_url: str, thumb_url: str | None) -> str | None:
+    if not fetch_post_page:
+        return thumb_url
 
     try:
-        per_page = int(engine_settings.get("per_page", 100))
+        resp = get(
+            post_url,
+            timeout=timeout,
+            headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Referer": base_url,
+            },
+        )
     except Exception:
-        return False
+        return thumb_url
 
-    if per_page < 1 or per_page > 100:
-        return False
-
-    return True
-
-
-def _apply_safesearch(query, params):
-    tags = query.split()
-
-    if params.get("safesearch"):
-        if "rating:safe" not in tags:
-            tags.append("rating:safe")
-
-    return " ".join(tags).strip()
-
-
-def request(query, params):
-    query = _apply_safesearch(query, params)
-
-    query_params = {
-        "page": "dapi",
-        "s": "post",
-        "q": "index",
-        "json": "1",
-        "tags": query,
-        "limit": per_page,
-        "pid": max(int(params.get("pageno", 1)) - 1, 0),
-        "api_key": api_key,
-        "user_id": user_id,
-    }
-
-    params["url"] = base_url + "?" + urlencode(query_params)
-
-    # важно для image_proxy
-    params["headers"] = {
-        "Referer": "https://gelbooru.com/",
-        "User-Agent": "Mozilla/5.0",
-    }
-
-    return params
-
-def response(resp):
-    results = []
+    if not getattr(resp, "ok", False):
+        return thumb_url
 
     try:
-        data = resp.json()
+        dom = html.fromstring(resp.text)
     except Exception:
-        return results
+        return thumb_url
 
-    posts = data.get("post", [])
+    candidates: list[str | None] = [
+        eval_xpath_getindex(dom, "//meta[@property='og:image']/@content", 0, default=None),
+        eval_xpath_getindex(dom, "//meta[@name='twitter:image']/@content", 0, default=None),
+        eval_xpath_getindex(dom, "//img[@id='image']/@src", 0, default=None),
+        eval_xpath_getindex(dom, "//img[contains(@class, 'image')]/@src", 0, default=None),
+        eval_xpath_getindex(dom, "//img[not(contains(@src, 'thumbnail_'))]/@src", 0, default=None),
+    ]
 
-    if isinstance(posts, dict):
-        posts = [posts]
+    picked = _first_nonempty(*candidates)
+    if not picked:
+        return thumb_url
 
-    for post in posts:
-        file_url = post.get("file_url") or ""
-        preview_url = post.get("preview_url") or ""
-        sample_url = post.get("sample_url") or ""
+    return urljoin(base_url, picked)
 
-        if not preview_url and not sample_url and not file_url:
+
+def response(resp: SXNG_Response) -> EngineResults:
+    res = EngineResults()
+
+    try:
+        dom = html.fromstring(resp.text)
+    except Exception:
+        return res
+
+    for post in eval_xpath_list(dom, "//div[contains(@class, 'post')]"):
+        href = eval_xpath_getindex(post, ".//a/@href", 0, default=None)
+        if not href:
             continue
 
-        # 🔥 СТАБИЛЬНАЯ стратегия:
-        # 1. preview (быстрый, стабильный)
-        # 2. sample (если есть)
-        # 3. file (как крайний fallback)
-        img_src = preview_url or sample_url or file_url
+        post_url = urljoin(base_url, href)
 
-        tags = post.get("tags", "") or ""
-        rating = post.get("rating", "") or ""
-        width = post.get("width")
-        height = post.get("height")
-        source = post.get("source", "") or ""
+        thumb = eval_xpath_getindex(post, ".//img/@src", 0, default=None)
+        if thumb:
+            thumb = urljoin(base_url, thumb)
 
-        title = post.get("title") or " ".join(tags.split()[:6])
-
-        results.append(
-            {
-                "template": "images.html",
-                "url": file_url or source,
-                "img_src": img_src,
-                "thumbnail_src": preview_url or img_src,
-                "title": title,
-                "content": "rating: " + rating if rating else None,
-                "source": source,
-                "resolution": str(width) + "x" + str(height) if width and height else None,
-            }
+        score = extract_text(
+            eval_xpath_getindex(post, ".//p[contains(@class, 'post-score')]", 0, default=None),
+            allow_none=True,
         )
+        post_id = href.rsplit("/", 1)[-1].strip("/") if href else ""
+        title = f"Post {post_id}" if post_id else "Image result"
 
-    return results
+        full_img = _extract_full_image_url(post_url, thumb)
+
+        item = res.types.LegacyResult(
+            template="images.html",
+            url=post_url,
+            title=title,
+            img_src=full_img or thumb or post_url,
+            thumbnail_src=thumb or full_img or post_url,
+            content=score or "",
+            source=base_url,
+        )
+        res.add(item)
+
+    return res
+
+
+def fetch_traits(engine_traits: EngineTraits) -> None:
+    # No special locale/region discovery needed.
+    return None
