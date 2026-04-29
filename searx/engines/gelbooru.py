@@ -67,8 +67,14 @@ def request(query, params):
         "api_key": api_key,
         "user_id": user_id,
     }
-
+    
     params["url"] = base_url + "?" + urlencode(query_params)
+    
+    params["headers"] = {
+        "Referer": "https://gelbooru.com/",
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    }
+    
     return params
 
 
@@ -95,6 +101,8 @@ def response(resp):
 
         img_src = sample_url if sample_url else file_url
 
+        thumbnail = preview_url if preview_url else img_src
+
         tags = post.get("tags", "") or ""
         rating = post.get("rating", "") or ""
         width = post.get("width")
@@ -108,7 +116,7 @@ def response(resp):
                 "template": "images.html",
                 "url": file_url,
                 "img_src": img_src,
-                "thumbnail_src": preview_url if preview_url else img_src,
+                "thumbnail_src": thumbnail,
                 "title": title,
                 "content": "rating: " + rating if rating else None,
                 "source": source,
