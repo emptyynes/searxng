@@ -26,9 +26,9 @@ engine_type = "online"
 timeout = 5.0
 
 SAFESEARCH_MAP = {
-    0: "general",
+    2: "general",
     1: "sensitive",
-    2: "explicit",
+    0: "explicit",
 }
 
 def request(query: str, params: dict[str, t.Any]) -> None:
