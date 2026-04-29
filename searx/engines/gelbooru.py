@@ -25,16 +25,25 @@ engine_type = "online"
 
 timeout = 5.0
 
+SAFESEARCH_MAP = {
+    0: "general",
+    1: "sensitive",
+    2: "explicit",
+}
 
 def request(query: str, params: dict[str, t.Any]) -> None:
     pageno = max(int(params.get("pageno", 1) or 1), 1)
 
+    safesearch = params.get("safesearch", 0)
+    rating = SAFESEARCH_MAP.get(safesearch, "general")
+
     params["url"] = f"{base_url}/?{urlencode({
         'tags': query,
-        'rating': 'general',
+        'rating': rating,
         'sort': 'id',
         'page': pageno,
     })}"
+
     params["method"] = "GET"
 
 
