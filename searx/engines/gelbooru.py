@@ -69,8 +69,14 @@ def request(query, params):
     }
 
     params["url"] = base_url + "?" + urlencode(query_params)
-    return params
 
+    # важно для image_proxy
+    params["headers"] = {
+        "Referer": "https://gelbooru.com/",
+        "User-Agent": "Mozilla/5.0",
+    }
+
+    return params
 
 def response(resp):
     results = []
@@ -88,9 +94,16 @@ def response(resp):
     for post in posts:
         file_url = post.get("file_url") or ""
         preview_url = post.get("preview_url") or ""
+        sample_url = post.get("sample_url") or ""
 
-        if not file_url:
+        if not preview_url and not sample_url and not file_url:
             continue
+
+        # 🔥 СТАБИЛЬНАЯ стратегия:
+        # 1. preview (быстрый, стабильный)
+        # 2. sample (если есть)
+        # 3. file (как крайний fallback)
+        img_src = preview_url or sample_url or file_url
 
         tags = post.get("tags", "") or ""
         rating = post.get("rating", "") or ""
@@ -103,9 +116,9 @@ def response(resp):
         results.append(
             {
                 "template": "images.html",
-                "url": source or file_url,
-                "img_src": preview_url if preview_url else file_url,
-                "thumbnail_src": preview_url if preview_url else file_url,
+                "url": file_url or source,
+                "img_src": img_src,
+                "thumbnail_src": preview_url or img_src,
                 "title": title,
                 "content": "rating: " + rating if rating else None,
                 "source": source,
