@@ -12,8 +12,7 @@ base_url = "https://cum.hnpse.com"
 
 categories = ["images"]
 paging = True
-engine_type = "online"
-timeout = 5.0
+timeout = 4.0
 
 
 def request(query: str, params: dict[str, t.Any]) -> None:
@@ -23,6 +22,25 @@ def request(query: str, params: dict[str, t.Any]) -> None:
         "sort": "id",
     })}"
     params["method"] = "GET"
+
+
+# ----------------------------
+# TRY TO RECONSTRUCT FULL IMAGE
+# ----------------------------
+def _thumb_to_full(url: str) -> str:
+    """
+    Gelbooru-style trick:
+    thumbnails usually contain /thumbnails/
+    full images usually are in /images/ or direct CDN path
+    """
+    if not url:
+        return url
+
+    return (
+        url
+        .replace("/thumbnails/", "/images/")
+        .replace("thumbnail_", "")
+    )
 
 
 def response(resp: SXNG_Response) -> EngineResults:
@@ -44,8 +62,9 @@ def response(resp: SXNG_Response) -> EngineResults:
 
         post_id = href.rsplit("/", 1)[-1]
 
-        # 🔥 ВАЖНО: img_src = post_url НЕ thumbnail
-        # потому что image_proxy сам разрулит финальный fetch
+        # 🔥 FULL IMAGE GUESS (IMPORTANT PART)
+        full_img = _thumb_to_full(thumb)
+
         results.add(
             results.types.LegacyResult(
                 template="images.html",
@@ -53,7 +72,9 @@ def response(resp: SXNG_Response) -> EngineResults:
                 title=f"Post {post_id}",
                 url=post_url,
 
-                img_src=thumb,           # proxy скачает thumbnail (стабильнее)
+                # 🔥 THIS is what fixes click-open behavior
+                img_src=full_img,
+
                 thumbnail_src=thumb,
 
                 content="",
