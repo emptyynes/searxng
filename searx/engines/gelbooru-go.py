@@ -38,7 +38,7 @@ def request(query: str, params: dict[str, t.Any]) -> None:
     rating = SAFESEARCH_MAP.get(safesearch, "general")
 
     params["url"] = f"{base_url}/?{urlencode({
-        'tags': query + '-futa -loli -pregnant -yaoi -futanari -scat -guro',
+        'tags': query + ' -futa -loli -pregnant -yaoi -futanari -scat -guro',
         'rating': rating,
         'sort': 'id',
         'page': pageno,
