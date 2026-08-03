@@ -21,6 +21,8 @@ from searx.engines import (
 from searx.network import get as http_get, post as http_post
 from searx.exceptions import SearxEngineResponseException
 from searx.utils import extr, gen_useragent
+from searx.data import ENGINE_TRAITS
+from searx.enginelib.traits import EngineTraits
 
 if t.TYPE_CHECKING:
     from searx.extended_types import SXNG_Response
@@ -60,7 +62,7 @@ def bing(query: str, _sxng_locale: str) -> list[str]:
     # bing search autocompleter
     base_url = "https://www.bing.com/AS/Suggestions?"
     # cvid has to be a 32 character long string consisting of numbers and uppsercase characters
-    cvid = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(32))
+    cvid = ''.join(random.choices(string.ascii_uppercase + string.digits, k=32))
     response = get(base_url + urlencode({'qry': query, 'csr': 1, 'cvid': cvid}))
     results: list[str] = []
 
@@ -133,7 +135,9 @@ def google_complete(query: str, sxng_locale: str) -> list[str]:
 
     """
 
-    google_info: dict[str, t.Any] = google.get_google_info({'searxng_locale': sxng_locale}, engines['google'].traits)
+    data = ENGINE_TRAITS.get("google") or {}
+    traits = EngineTraits(**data)
+    google_info: dict[str, t.Any] = google.get_google_info({'searxng_locale': sxng_locale}, traits)
     url = 'https://{subdomain}/complete/search?{args}'
     args = urlencode(
         {
