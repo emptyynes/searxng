@@ -851,7 +851,6 @@ def autocompleter():
         suggestions = json.dumps([sug_prefix, results, [], [], relevances])
         mimetype = 'application/x-suggestions+json'
 
-    suggestions = escape(suggestions, False)
     return Response(suggestions, mimetype=mimetype)
 
 
@@ -1196,7 +1195,7 @@ def opensearch():
         method = 'GET'
 
     if method not in ('POST', 'GET'):
-        method = 'POST'
+        method = 'GET'
 
     ret = render('opensearch.xml', opensearch_method=method, autocomplete=autocomplete)
     resp = Response(response=ret, status=200, mimetype="application/opensearchdescription+xml")
